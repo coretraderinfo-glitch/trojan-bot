@@ -60,6 +60,23 @@ const User = mongoose.model('User', userSchema);
 const Group = mongoose.model('Group', groupSchema);
 const License = mongoose.model('License', licenseSchema);
 
+// --- Caching for Performance ---
+// Store authorized Chat IDs in memory to avoid DB hitting on every message
+const authorizedCache = new Set();
+const CACHE_TTL = 1000 * 60 * 5; // Refresh every 5 minutes (Optional, simplified here)
+
+// Pre-load cache on startup
+const preloadCache = async () => {
+  try {
+    const groups = await Group.find({ isAuthorized: true });
+    groups.forEach(g => authorizedCache.add(g.chatId));
+    console.log(`✅ Loaded ${authorizedCache.size} authorized groups into cache.`);
+  } catch (e) {
+    console.error("Cache preload failed:", e);
+  }
+};
+preloadCache();
+
 // --- Middleware 1: Access Control & Authorization ---
 bot.use(async (ctx, next) => {
   // Allow private chats always (for talking to bot)
