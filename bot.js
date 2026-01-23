@@ -138,6 +138,23 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
+// --- Helper: Check Admin Permissions ---
+const isGroupAdmin = async (ctx) => {
+  // 1. Owner always allowed
+  if (OWNER_ID && ctx.from.id === OWNER_ID) return true;
+
+  // 2. Private chat always allowed (for Owner/Admin DMs)
+  if (ctx.chat.type === 'private') return true;
+
+  try {
+    const member = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
+    return member.status === 'administrator' || member.status === 'creator';
+  } catch (e) {
+    console.error('Error checking admin:', e);
+    return false;
+  }
+};
+
 // --- Commands: Access Control ---
 
 // 0. Debug/Diagnostics (Helper)
@@ -200,6 +217,8 @@ bot.command('generate_key', async (ctx) => {
 
 // 3. Activate Group
 bot.command('activate', async (ctx) => {
+  if (!await isGroupAdmin(ctx)) return; // Ignored if not admin
+
   const args = ctx.message.text.split(' ');
   const inputKey = args[1];
 
@@ -271,6 +290,8 @@ bot.command('unlock', async (ctx) => {
 
 // --- Command: Kick inactive users ---
 bot.command('kick_inactive', async (ctx) => {
+  if (!await isGroupAdmin(ctx)) return;
+
   const args = ctx.message.text.split(' ');
   const days = parseInt(args[1]);
 
@@ -335,11 +356,14 @@ bot.on('document', async (ctx) => {
 
 // --- 2. Deleted Account Logic (Ghost Sweeper) ---
 bot.command('clean_ghosts', async (ctx) => {
+  if (!await isGroupAdmin(ctx)) return;
   return ctx.reply("ℹ️ **System Info**: Telegram Bots cannot list all group members directly to find deleted accounts. I can only check members if I have seen them before or if you reply to their message with /check.");
 });
 
 // Allow admin to check a specific user by replying to them
 bot.command('check', async (ctx) => {
+  if (!await isGroupAdmin(ctx)) return;
+
   if (!ctx.message.reply_to_message) {
     return ctx.reply("Please reply to a user's message to check their status.");
   }
@@ -364,7 +388,8 @@ let ADMIN_USERNAME = '';
 // NOTE: This variable resets if the bot restarts. 
 // For 24/7 reliability, we recommend storing the admin ID in MongoDB as well.
 
-bot.command('setadmin', (ctx) => {
+bot.command('setadmin', async (ctx) => {
+  if (!await isGroupAdmin(ctx)) return;
   // Usage: /setadmin @username or just /setadmin to set yourself
   if (ctx.message.text.split(' ').length > 1) {
     ADMIN_USERNAME = ctx.message.text.split(' ')[1];
