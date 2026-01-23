@@ -84,6 +84,12 @@ bot.use(async (ctx, next) => {
     return next();
   }
 
+  // DEBUG: Log every message in groups to see if we are "blind"
+  // If this doesn't show up in logs, Privacy Mode is ON or Bot is not Admin.
+  if (ctx.chat) {
+    console.log(`📨 Msg from ${ctx.chat.title} (${ctx.chat.id}) by ${ctx.from.username || ctx.from.id}: ${ctx.message && ctx.message.text ? ctx.message.text : '[Non-Text]'}`);
+  }
+
   // Check Groups/Supergroups
   if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
     const chatId = ctx.chat.id;
@@ -96,13 +102,18 @@ bot.use(async (ctx, next) => {
     // Check DB for authorization
     let group = await Group.findOne({ chatId: chatId });
 
-    // Allow the /activate command to pass through even if unauthorized
-    if (ctx.message && ctx.message.text && ctx.message.text.startsWith('/activate')) {
+    // Allow the /activate command (with optional @botname) to pass through
+    if (ctx.message && ctx.message.text && ctx.message.text.match(/^\/activate(@\w+)?/)) {
       return next();
     }
 
-    // Allow the /id command to pass through so owner can find their ID
-    if (ctx.message && ctx.message.text && ctx.message.text.startsWith('/id')) {
+    // Allow the /id command (with optional @botname) to pass through
+    if (ctx.message && ctx.message.text && ctx.message.text.match(/^\/id(@\w+)?/)) {
+      return next();
+    }
+
+    // Allow the /unlock command (with optional @botname) 
+    if (ctx.message && ctx.message.text && ctx.message.text.match(/^\/unlock(@\w+)?/)) {
       return next();
     }
 
@@ -276,6 +287,9 @@ bot.command('activate', async (ctx) => {
 
     ctx.reply("✅ **Activation Successful!**\nThis group is now authorized to use the Trojan Bot 24/7.");
 
+    // Update Cache immediately
+    authorizedCache.add(ctx.chat.id);
+
   } catch (e) {
     console.error(e);
     ctx.reply("❌ Error during activation.");
@@ -301,6 +315,9 @@ bot.command('unlock', async (ctx) => {
       },
       { upsert: true, new: true }
     );
+    // Update Cache immediately
+    authorizedCache.add(ctx.chat.id);
+
     ctx.reply("🔓 **Owner Override Enabled**\nThis group is now authorized.");
   } catch (e) {
     console.error(e);
