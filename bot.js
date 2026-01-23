@@ -160,6 +160,11 @@ const isGroupAdmin = async (ctx) => {
 
 // 0. Debug/Diagnostics (Helper)
 bot.command('debug', async (ctx) => {
+  // RESTRICTION: Only Admins can use this
+  if (!await isGroupAdmin(ctx)) {
+    return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
+  }
+
   const chatId = ctx.chat.id;
   let statusMsg = `🔍 **Diagnostic Report**\n\n`;
 
@@ -178,12 +183,12 @@ bot.command('debug', async (ctx) => {
     const isAdmin = member.status === 'administrator' || member.status === 'creator';
     const canDelete = member.can_delete_messages;
 
-    statusMsg += `👮 **Admin Status**: ${isAdmin ? '✅ Yes' : '❌ NO (Make me admin!)'}\n`;
+    statusMsg += `🤖 **Bot Admin Rights**: ${isAdmin ? '✅ Yes' : '❌ NO (Make me admin!)'}\n`;
     if (isAdmin) {
-      statusMsg += `🗑️ **Can Delete**: ${canDelete ? '✅ Yes' : '❌ NO (Check permissions!)'}\n`;
+      statusMsg += `🗑️ **Bot Can Delete**: ${canDelete ? '✅ Yes' : '❌ NO (Check permissions!)'}\n`;
     }
   } catch (e) {
-    statusMsg += `❓ **Admin Check**: Failed (${e.message})\n`;
+    statusMsg += `❓ **Bot Check**: Failed (${e.message})\n`;
   }
 
   // 4. Owner Check
