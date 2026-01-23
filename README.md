@@ -33,8 +33,14 @@ node bot.js
 
 ## Commands
 
+### 🛡️ Access Control (Private Mode)
+- `/id` - Get your Telegram User ID (Needed for setup).
+- `/generate_key` - (Owner Only) Generate a new license key.
+- `/activate <key>` - Unlock the bot for the current group.
+
+### 🧹 Moderation
 - `/kick_inactive <days>` - Kicks users who haven't spoken in X days.
-- `/clean_ghosts` - Checks for deleted accounts (limited by API).
+- `/clean_ghosts` - Checks for deleted accounts.
 - `/check` (Reply to user) - Check specific user status.
 - `/setadmin` - Set the admin for alerts.
 - **Auto-Moderation**: Automatically deletes banned file types (`.exe`, `.apk`, etc).
@@ -45,5 +51,8 @@ This bot is ready for deployment on platforms like **Railway**, **Render**, or *
 
 1.  **Push code** to GitHub.
 2.  **Connect** your repository to the hosting provider.
-3.  **Environment Variables**: Go to the "Settings" or "Variables" section of your dashboard and add `BOT_TOKEN` and `MONGO_URI`.
+3.  **Environment Variables**: Go to the "Settings" or "Variables" section of your dashboard and add:
+    - `BOT_TOKEN`: Your Telegram Bot Token.
+    - `MONGO_URI`: Your MongoDB Connection String.
+    - `OWNER_ID`: Your Telegram User ID (Get it by sending `/id` to the bot).
 4.  **Worker**: Ensure the platform runs the `worker` process (defined in `Procfile`) or simply `node bot.js`.
