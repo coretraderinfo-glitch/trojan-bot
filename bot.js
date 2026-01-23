@@ -2,12 +2,14 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const express = require('express'); // Added for Uptime Monitoring
 
 // --- Configuration ---
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 // We read OWNER_ID from env, but if not set, user can't generate keys.
 const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID) : null;
+const PORT = process.env.PORT || 3000; // Allow cloud provider to set PORT
 
 if (!BOT_TOKEN || !MONGO_URI) {
   console.error("❌ CRTICAL ERROR: Missing BOT_TOKEN or MONGO_URI in .env file.");
@@ -26,6 +28,18 @@ if (MONGO_URI) {
     .then(() => console.log('✅ Connected to MongoDB'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
 }
+
+// --- Heartbeat Server (For Uptime Monitoring) ---
+const app = express();
+app.get('/', (req, res) => {
+  res.send('Bot is alive! 🤖');
+});
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+app.listen(PORT, () => {
+  console.log(`💓 Heartbeat server listening on port ${PORT}`);
+});
 
 // --- Schemas ---
 
