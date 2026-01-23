@@ -88,6 +88,11 @@ bot.use(async (ctx, next) => {
   if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
     const chatId = ctx.chat.id;
 
+    // Fast Path: Check Memory Cache first
+    if (authorizedCache.has(chatId)) {
+      return next();
+    }
+
     // Check DB for authorization
     let group = await Group.findOne({ chatId: chatId });
 
@@ -103,11 +108,11 @@ bot.use(async (ctx, next) => {
 
     // If not authorized, silently ignore (or you could leave)
     if (!group || !group.isAuthorized) {
-      // Optional: Leave chat or reply once. 
-      // For now, we silently ignore to prevent spamming.
-      // console.log(`Ignoring unauthorized chat: ${ctx.chat.title} (${chatId})`);
       return;
     }
+
+    // If we found it in DB but not in Cache, add it to Cache
+    authorizedCache.add(chatId);
   }
 
   return next();
