@@ -299,7 +299,7 @@ bot.command('activate', async (ctx) => {
       { upsert: true, new: true }
     );
 
-    ctx.reply("✅ **Activation Successful!**\nThis group is now authorized to use the Trojan Bot 24/7.");
+    ctx.reply("✅ **Activation Successful!**\nThis group is now authorized to use the Aero Smart 24/7.");
 
     // Update Cache immediately
     authorizedCache.add(ctx.chat.id);
