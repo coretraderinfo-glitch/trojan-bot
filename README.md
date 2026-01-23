@@ -35,6 +35,7 @@ node bot.js
 
 ### 🛡️ Access Control (Private Mode)
 - `/id` - Get your Telegram User ID (Needed for setup).
+- `/unlock` - (Owner Only) Instantly unlock the current group without a key.
 - `/generate_key` - (Owner Only) Generate a new license key.
 - `/activate <key>` - Unlock the bot for the current group.
 
