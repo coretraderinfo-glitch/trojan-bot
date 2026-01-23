@@ -141,7 +141,8 @@ bot.use(async (ctx, next) => {
 // --- Helper: Check Admin Permissions ---
 const isGroupAdmin = async (ctx) => {
   // 1. Owner always allowed
-  if (OWNER_ID && ctx.from.id === OWNER_ID) return true;
+  // Ensure strict comparison with string/number safety
+  if (OWNER_ID && String(ctx.from.id) === String(OWNER_ID)) return true;
 
   // 2. Private chat always allowed (for Owner/Admin DMs)
   if (ctx.chat.type === 'private') return true;
@@ -185,6 +186,13 @@ bot.command('debug', async (ctx) => {
     statusMsg += `❓ **Admin Check**: Failed (${e.message})\n`;
   }
 
+  // 4. Owner Check
+  statusMsg += `👑 **Owner Configured**: ${OWNER_ID ? '✅ Yes' : '❌ NO'}\n`;
+  if (OWNER_ID) {
+    statusMsg += `👤 **You are Owner**: ${String(ctx.from.id) === String(OWNER_ID) ? '✅ Yes' : '❌ NO'}\n`;
+  }
+
+
   ctx.reply(statusMsg);
 });
 
@@ -198,8 +206,8 @@ bot.command('generate_key', async (ctx) => {
   if (!OWNER_ID) {
     return ctx.reply("❌ OWNER_ID is not set in the .env file. I don't know who the boss is.");
   }
-  if (ctx.from.id !== OWNER_ID) {
-    return ctx.reply("⛔ You are not authorized to generate keys.");
+  if (String(ctx.from.id) !== String(OWNER_ID)) {
+    return ctx.reply("⛔ You are not authorized to generate keys. (Owner Only)");
   }
 
   const newKey = uuidv4();
@@ -217,7 +225,9 @@ bot.command('generate_key', async (ctx) => {
 
 // 3. Activate Group
 bot.command('activate', async (ctx) => {
-  if (!await isGroupAdmin(ctx)) return; // Ignored if not admin
+  if (!await isGroupAdmin(ctx)) {
+    return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
+  }
 
   const args = ctx.message.text.split(' ');
   const inputKey = args[1];
@@ -266,8 +276,9 @@ bot.command('activate', async (ctx) => {
 // 4. Owner Override Unlock
 bot.command('unlock', async (ctx) => {
   // Check if OWNER_ID is valid and matches message sender
-  if (!OWNER_ID || ctx.from.id !== OWNER_ID) {
-    return; // Silently ignore non-owners
+  if (!OWNER_ID || String(ctx.from.id) !== String(OWNER_ID)) {
+    // Reply allows user to know why it failed, instead of silence
+    return ctx.reply("⛔ **Access Denied**: This command is restricted to the Bot Owner.");
   }
 
   try {
@@ -290,7 +301,9 @@ bot.command('unlock', async (ctx) => {
 
 // --- Command: Kick inactive users ---
 bot.command('kick_inactive', async (ctx) => {
-  if (!await isGroupAdmin(ctx)) return;
+  if (!await isGroupAdmin(ctx)) {
+    return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
+  }
 
   const args = ctx.message.text.split(' ');
   const days = parseInt(args[1]);
@@ -356,13 +369,17 @@ bot.on('document', async (ctx) => {
 
 // --- 2. Deleted Account Logic (Ghost Sweeper) ---
 bot.command('clean_ghosts', async (ctx) => {
-  if (!await isGroupAdmin(ctx)) return;
+  if (!await isGroupAdmin(ctx)) {
+    return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
+  }
   return ctx.reply("ℹ️ **System Info**: Telegram Bots cannot list all group members directly to find deleted accounts. I can only check members if I have seen them before or if you reply to their message with /check.");
 });
 
 // Allow admin to check a specific user by replying to them
 bot.command('check', async (ctx) => {
-  if (!await isGroupAdmin(ctx)) return;
+  if (!await isGroupAdmin(ctx)) {
+    return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
+  }
 
   if (!ctx.message.reply_to_message) {
     return ctx.reply("Please reply to a user's message to check their status.");
@@ -389,7 +406,9 @@ let ADMIN_USERNAME = '';
 // For 24/7 reliability, we recommend storing the admin ID in MongoDB as well.
 
 bot.command('setadmin', async (ctx) => {
-  if (!await isGroupAdmin(ctx)) return;
+  if (!await isGroupAdmin(ctx)) {
+    return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
+  }
   // Usage: /setadmin @username or just /setadmin to set yourself
   if (ctx.message.text.split(' ').length > 1) {
     ADMIN_USERNAME = ctx.message.text.split(' ')[1];
@@ -414,8 +433,21 @@ bot.on('new_chat_members', (ctx) => {
 // Start the bot
 bot.launch().then(() => {
   console.log('Bot is running...');
+  console.log(`👑 Owner ID configured: ${OWNER_ID ? getLast4Digits(OWNER_ID) : 'Not Set'}`);
 }).catch(err => {
   console.error('Failed to start bot', err);
+});
+
+// Helper to mask ID
+function getLast4Digits(id) {
+  const s = String(id);
+  return s.length > 4 ? '...' + s.slice(-4) : s;
+}
+
+// Global Error Handler
+bot.catch((err, ctx) => {
+  console.error(`❌ Global Error for ${ctx.updateType}:`, err);
+  // Don't crash, just log
 });
 
 // Enable graceful stop
