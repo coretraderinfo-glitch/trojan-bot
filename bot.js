@@ -191,6 +191,31 @@ bot.command('activate', async (ctx) => {
   }
 });
 
+// 4. Owner Override Unlock
+bot.command('unlock', async (ctx) => {
+  // Check if OWNER_ID is valid and matches message sender
+  if (!OWNER_ID || ctx.from.id !== OWNER_ID) {
+    return; // Silently ignore non-owners
+  }
+
+  try {
+    await Group.findOneAndUpdate(
+      { chatId: ctx.chat.id },
+      {
+        name: ctx.chat.title,
+        isAuthorized: true,
+        authorizedAt: Date.now(),
+        authorizedBy: ctx.from.id
+      },
+      { upsert: true, new: true }
+    );
+    ctx.reply("🔓 **Owner Override Enabled**\nThis group is now authorized.");
+  } catch (e) {
+    console.error(e);
+    ctx.reply("❌ Error unlocking group.");
+  }
+});
+
 // --- Command: Kick inactive users ---
 bot.command('kick_inactive', async (ctx) => {
   const args = ctx.message.text.split(' ');
