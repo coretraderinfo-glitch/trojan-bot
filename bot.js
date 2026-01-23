@@ -140,6 +140,37 @@ bot.use(async (ctx, next) => {
 
 // --- Commands: Access Control ---
 
+// 0. Debug/Diagnostics (Helper)
+bot.command('debug', async (ctx) => {
+  const chatId = ctx.chat.id;
+  let statusMsg = `🔍 **Diagnostic Report**\n\n`;
+
+  // 1. Check Authorization (DB)
+  const group = await Group.findOne({ chatId: chatId });
+  const isDbAuth = group && group.isAuthorized;
+  statusMsg += `📂 **Database**: ${isDbAuth ? '✅ Authorized' : '❌ LOCKED (Not Authorized)'}\n`;
+
+  // 2. Check Authorization (Cache)
+  const isCacheAuth = authorizedCache.has(chatId);
+  statusMsg += `🚀 **Cache**: ${isCacheAuth ? '✅ Hit' : '⚠️ Miss (Will rely on DB)'}\n`;
+
+  // 3. Check Admin Rights
+  try {
+    const member = await ctx.telegram.getChatMember(chatId, ctx.botInfo.id);
+    const isAdmin = member.status === 'administrator' || member.status === 'creator';
+    const canDelete = member.can_delete_messages;
+
+    statusMsg += `👮 **Admin Status**: ${isAdmin ? '✅ Yes' : '❌ NO (Make me admin!)'}\n`;
+    if (isAdmin) {
+      statusMsg += `🗑️ **Can Delete**: ${canDelete ? '✅ Yes' : '❌ NO (Check permissions!)'}\n`;
+    }
+  } catch (e) {
+    statusMsg += `❓ **Admin Check**: Failed (${e.message})\n`;
+  }
+
+  ctx.reply(statusMsg);
+});
+
 // 1. Get My ID (Helper)
 bot.command('id', (ctx) => {
   ctx.reply(`🆔 Your ID: \`${ctx.from.id}\`\n📍 Chat ID: \`${ctx.chat.id}\``, { parse_mode: 'Markdown' });
