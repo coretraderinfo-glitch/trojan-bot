@@ -74,3 +74,23 @@ This bot is ready for deployment on platforms like **Railway**, **Render**, or *
     - `MONGO_URI`: Your MongoDB Connection String.
     - `OWNER_ID`: Your Telegram User ID (Get it by sending `/id` to the bot).
 4.  **Worker**: Ensure the platform runs the `worker` process (defined in `Procfile`) or simply `node bot.js`.
+
+## 🚀 Production Checklist (Vital!)
+
+For the bot to work 24/7 without issues, you **MUST** ensure the following:
+
+### 1. ❌ Disable Privacy Mode
+If "Group Privacy" is Enabled (Default), the bot cannot see simple messages or new member events in some groups.
+   - Go to [@BotFather](https://t.me/BotFather)
+   - Select your bot causing issues.
+   - Go to **Bot Settings** > **Group Privacy**.
+   - Click **Turn off**.
+
+### 2. 👑 Handle Anonymous Admins
+The bot now supports "Anonymous Admins". If you post as a channel or anonymous admin, the bot will recognize you and allow commands like `/kick_inactive`.
+
+### 3. ⚡ Prevent "Sleeping"
+Free tier hosting (like Railway Free or Render Free) often "sleeps" if the bot is inactive.
+   - **Symptom**: Bot stops responding after 1 hour of silence, but wakes up if you redeploy.
+   - **Fix**: Upgrade to a Basic Plan ($5/mo) on Railway/Heroku to keep it awake 24/7.
+

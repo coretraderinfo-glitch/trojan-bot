@@ -147,6 +147,10 @@ const isGroupAdmin = async (ctx) => {
   // 2. Private chat always allowed (for Owner/Admin DMs)
   if (ctx.chat.type === 'private') return true;
 
+  // 3. Handle "Anonymous Group Admin" (Telegram Feature)
+  // ID 1087968824 is the generic ID for all anonymous admins
+  if (ctx.from.id === 1087968824) return true;
+
   try {
     const member = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
     return member.status === 'administrator' || member.status === 'creator';
@@ -453,6 +457,23 @@ function getLast4Digits(id) {
 bot.catch((err, ctx) => {
   console.error(`❌ Global Error for ${ctx.updateType}:`, err);
   // Don't crash, just log
+});
+
+// --- Event: Bot Status Change (Promoted to Admin) ---
+bot.on('my_chat_member', async (ctx) => {
+  const newStatus = ctx.myChatMember.new_chat_member.status;
+  const oldStatus = ctx.myChatMember.old_chat_member.status;
+  const chat = ctx.chat;
+
+  console.log(`ℹ️ Status change in ${chat.title} (${chat.id}): ${oldStatus} -> ${newStatus}`);
+
+  if (newStatus === 'administrator' && oldStatus !== 'administrator') {
+    try {
+      await ctx.reply(`🤖 **Thanks for promoting me!**\n\nI am now an Admin.\nTo use me, please authorize this group:\n\n1. Get a key from the owner.\n2. Run \`/activate <KEY>\`\n\n(Owner can use \`/unlock\`)`);
+    } catch (e) {
+      console.error("Could not reply to promotion event:", e);
+    }
+  }
 });
 
 // Enable graceful stop
