@@ -1,18 +1,20 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
 
 // --- Configuration ---
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
+// We read OWNER_ID from env, but if not set, user can't generate keys.
+const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID) : null;
 
 if (!BOT_TOKEN || !MONGO_URI) {
   console.error("❌ CRTICAL ERROR: Missing BOT_TOKEN or MONGO_URI in .env file.");
   console.error("Please add them to your .env file.");
-  // process.exit(1); // Commented out to allow the bot to 'start' so you can see the error, but it won't work consistently.
 }
 
-const bot = new Telegraf(BOT_TOKEN || 'YOUR_FALLBACK_TOKEN_HERE'); 
+const bot = new Telegraf(BOT_TOKEN || 'YOUR_FALLBACK_TOKEN_HERE');
 
 const BANNED_EXTENSIONS = [
   '.exe', '.apk', '.scr', '.bat', '.cmd', '.sh', '.com', '.msi', '.jar'
@@ -25,16 +27,76 @@ if (MONGO_URI) {
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
 }
 
-// Schema for tracking user activity
+// --- Schemas ---
+
+// 1. User Activity (Existing)
 const userSchema = new mongoose.Schema({
   userId: { type: Number, required: true, unique: true },
   username: String,
   last_seen: { type: Number, default: Date.now }
 });
 
-const User = mongoose.model('User', userSchema);
+// 2. Authorized Groups (New)
+const groupSchema = new mongoose.Schema({
+  chatId: { type: Number, required: true, unique: true },
+  name: String,
+  isAuthorized: { type: Boolean, default: false },
+  authorizedAt: { type: Date },
+  authorizedBy: { type: Number } // User ID who activated it
+});
 
-// --- Middleware: Track activity on EVERY message ---
+// 3. License Keys (New)
+const licenseSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  createdBy: Number,
+  createdAt: { type: Date, default: Date.now },
+  isRedeemed: { type: Boolean, default: false },
+  redeemedBy: Number, // User ID
+  redeemedAt: Date,
+  redeemedInChat: Number // Chat ID
+});
+
+const User = mongoose.model('User', userSchema);
+const Group = mongoose.model('Group', groupSchema);
+const License = mongoose.model('License', licenseSchema);
+
+// --- Middleware 1: Access Control & Authorization ---
+bot.use(async (ctx, next) => {
+  // Allow private chats always (for talking to bot)
+  if (ctx.chat && ctx.chat.type === 'private') {
+    return next();
+  }
+
+  // Check Groups/Supergroups
+  if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
+    const chatId = ctx.chat.id;
+
+    // Check DB for authorization
+    let group = await Group.findOne({ chatId: chatId });
+
+    // Allow the /activate command to pass through even if unauthorized
+    if (ctx.message && ctx.message.text && ctx.message.text.startsWith('/activate')) {
+      return next();
+    }
+
+    // Allow the /id command to pass through so owner can find their ID
+    if (ctx.message && ctx.message.text && ctx.message.text.startsWith('/id')) {
+      return next();
+    }
+
+    // If not authorized, silently ignore (or you could leave)
+    if (!group || !group.isAuthorized) {
+      // Optional: Leave chat or reply once. 
+      // For now, we silently ignore to prevent spamming.
+      // console.log(`Ignoring unauthorized chat: ${ctx.chat.title} (${chatId})`);
+      return;
+    }
+  }
+
+  return next();
+});
+
+// --- Middleware 2: Track activity (Only runs if Authorized) ---
 bot.use(async (ctx, next) => {
   if (ctx.from && ctx.chat && ctx.chat.type !== 'private') {
     const userId = ctx.from.id;
@@ -42,17 +104,91 @@ bot.use(async (ctx, next) => {
     const now = Date.now();
 
     try {
-      // Upsert: Update if exists, Insert if new
       await User.findOneAndUpdate(
         { userId: userId },
         { last_seen: now, username: username },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
     } catch (err) {
-      console.error('Error updating user activity in DB:', err);
+      console.error('Error updating user activity:', err);
     }
   }
   return next();
+});
+
+// --- Commands: Access Control ---
+
+// 1. Get My ID (Helper)
+bot.command('id', (ctx) => {
+  ctx.reply(`🆔 Your ID: \`${ctx.from.id}\`\n📍 Chat ID: \`${ctx.chat.id}\``, { parse_mode: 'Markdown' });
+});
+
+// 2. Generate Key (Owner Only)
+bot.command('generate_key', async (ctx) => {
+  if (!OWNER_ID) {
+    return ctx.reply("❌ OWNER_ID is not set in the .env file. I don't know who the boss is.");
+  }
+  if (ctx.from.id !== OWNER_ID) {
+    return ctx.reply("⛔ You are not authorized to generate keys.");
+  }
+
+  const newKey = uuidv4();
+  try {
+    await License.create({
+      key: newKey,
+      createdBy: ctx.from.id
+    });
+    ctx.reply(`🔑 **New License Key Generated**:\n\`${newKey}\`\n\nUse \`/activate ${newKey}\` in a group to unlock me.`, { parse_mode: 'Markdown' });
+  } catch (e) {
+    console.error(e);
+    ctx.reply("❌ Error generating key.");
+  }
+});
+
+// 3. Activate Group
+bot.command('activate', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  const inputKey = args[1];
+
+  if (!inputKey) {
+    return ctx.reply("❌ Usage: `/activate <LICENSE_KEY>`");
+  }
+
+  try {
+    const license = await License.findOne({ key: inputKey });
+
+    if (!license) {
+      return ctx.reply("❌ Invalid License Key.");
+    }
+    if (license.isRedeemed) {
+      return ctx.reply("❌ This key has already been used.");
+    }
+
+    // Activate!
+    await License.updateOne({ _id: license._id }, {
+      isRedeemed: true,
+      redeemedBy: ctx.from.id,
+      redeemedAt: Date.now(),
+      redeemedInChat: ctx.chat.id
+    });
+
+    await Group.findOneAndUpdate(
+      { chatId: ctx.chat.id },
+      {
+        name: ctx.chat.title,
+        isAuthorized: true,
+        authorizedAt: Date.now(),
+        authorizedBy: ctx.from.id
+      },
+      { upsert: true, new: true }
+    );
+
+    ctx.reply("✅ **Activation Successful!**\nThis group is now authorized to use the Trojan Bot 24/7.");
+
+  } catch (e) {
+    console.error(e);
+    ctx.reply("❌ Error during activation.");
+  }
 });
 
 // --- Command: Kick inactive users ---
@@ -146,7 +282,7 @@ bot.command('check', async (ctx) => {
 });
 
 // --- 3. New Member Alert & Admin Tagging ---
-let ADMIN_USERNAME = ''; 
+let ADMIN_USERNAME = '';
 // NOTE: This variable resets if the bot restarts. 
 // For 24/7 reliability, we recommend storing the admin ID in MongoDB as well.
 
