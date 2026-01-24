@@ -185,6 +185,37 @@ const isGroupAdmin = async (ctx) => {
   }
 };
 
+// --- 0. Link Shield Logic (Level 1: Block All) ---
+bot.use(async (ctx, next) => {
+  // Only inspect text messages
+  if (ctx.message && ctx.message.text) {
+    const text = ctx.message.text.toLowerCase();
+
+    // Regex for: http(s), www, or common domains (com|net|org...)
+    const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(\b\w+\.(com|net|org|xyz|info|biz|io|me)\b)/gi;
+
+    if (urlRegex.test(text)) {
+      // Logic: Allow Admins, Block Everyone Else
+      const isAdmin = await isGroupAdmin(ctx);
+
+      if (!isAdmin) {
+        try {
+          await ctx.deleteMessage();
+          // Optional: Send a warning message that auto-deletes
+          // const reply = await ctx.reply(`⚠️ @${ctx.from.username || ctx.from.first_name}, links are not allowed in this group.`);
+          // setTimeout(() => ctx.telegram.deleteMessage(ctx.chat.id, reply.message_id), 5000);
+          console.log(`🛡️ Link Shield: Deleted link from ${ctx.from.username || ctx.from.id}`);
+          return; // Stop processing
+        } catch (e) {
+          console.error("Link Shield failed to delete:", e.message);
+        }
+      }
+    }
+  }
+  return next();
+});
+
+
 // --- Commands: Access Control ---
 
 // 0. Debug/Diagnostics (Helper)
