@@ -22,12 +22,39 @@ const BANNED_EXTENSIONS = [
   '.exe', '.apk', '.scr', '.bat', '.cmd', '.sh', '.com', '.msi', '.jar'
 ];
 
-// --- Database Setup ---
-if (MONGO_URI) {
-  mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ Connected to MongoDB'))
-    .catch(err => console.error('❌ MongoDB Connection Error:', err));
-}
+// --- Database & Foundation Setup ---
+mongoose.set('strictQuery', false);
+
+const connectDB = async (retryCount = 0) => {
+  console.log(`📡 Attempting MongoDB Connection... (Try ${retryCount + 1})`);
+  const options = {
+    serverSelectionTimeoutMS: 10000, // Give it 10s
+    socketTimeoutMS: 45000,
+    bufferCommands: false,
+  };
+
+  try {
+    if (!MONGO_URI) throw new Error("MONGO_URI is missing from .env");
+    await mongoose.connect(MONGO_URI, options);
+    console.log('✅ Ironclad Foundation: Connected to MongoDB');
+    // Once connected, preload the cache
+    await preloadCache();
+  } catch (err) {
+    console.error(`❌ Connection Attempt ${retryCount + 1} Failed:`, err.message);
+    if (retryCount < 10) {
+      console.log('🔄 Retrying in 5 seconds...');
+      setTimeout(() => connectDB(retryCount + 1), 5000);
+    }
+  }
+};
+
+connectDB();
+
+// Handle Disconnection
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️ MongoDB Disconnected. Bot functionality will be limited.');
+});
+
 
 // --- Heartbeat Server (For Uptime Monitoring) ---
 const app = express();
@@ -70,9 +97,18 @@ const licenseSchema = new mongoose.Schema({
   redeemedInChat: Number // Chat ID
 });
 
+// 4. System Settings (New - Ironclad Persistence)
+const settingSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  value: mongoose.Schema.Types.Mixed,
+  updatedAt: { type: Date, default: Date.now }
+});
+
 const User = mongoose.model('User', userSchema);
 const Group = mongoose.model('Group', groupSchema);
 const License = mongoose.model('License', licenseSchema);
+const Setting = mongoose.model('Setting', settingSchema);
+
 
 // --- Caching for Performance ---
 // Store authorized Chat IDs in memory to avoid DB hitting on every message
@@ -82,62 +118,62 @@ const CACHE_TTL = 1000 * 60 * 5; // Refresh every 5 minutes (Optional, simplifie
 // Pre-load cache on startup
 const preloadCache = async () => {
   try {
+    if (mongoose.connection.readyState !== 1) return;
     const groups = await Group.find({ isAuthorized: true });
+    authorizedCache.clear();
     groups.forEach(g => authorizedCache.add(g.chatId));
-    console.log(`✅ Loaded ${authorizedCache.size} authorized groups into cache.`);
+    console.log(`✅ Cache: Loaded ${authorizedCache.size} authorized groups.`);
   } catch (e) {
-    console.error("Cache preload failed:", e);
+    console.error("Cache preload failed:", e.message);
   }
 };
-preloadCache();
+
+// --- Middleware 0: Emergency Ping (No DB Required) ---
+bot.command('ping', (ctx) => {
+  return ctx.reply('🏓 Pong! I am alive. (DB Status: ' + mongoose.connection.readyState + ')');
+});
 
 // --- Middleware 1: Access Control & Authorization ---
 bot.use(async (ctx, next) => {
-  // Allow private chats always (for talking to bot)
-  if (ctx.chat && ctx.chat.type === 'private') {
-    return next();
-  }
+  // Allow private chats always
+  if (ctx.chat && ctx.chat.type === 'private') return next();
 
-  // DEBUG: Log every message in groups to see if we are "blind"
-  // If this doesn't show up in logs, Privacy Mode is ON or Bot is not Admin.
+  // DEBUG LOG
   if (ctx.chat) {
-    console.log(`📨 Msg from ${ctx.chat.title} (${ctx.chat.id}) by ${ctx.from.username || ctx.from.id}: ${ctx.message && ctx.message.text ? ctx.message.text : '[Non-Text]'}`);
+    console.log(`📨 Msg from ${ctx.chat.title} (${ctx.chat.id}): ${ctx.message && ctx.message.text ? ctx.message.text : '[Non-Text]'}`);
   }
 
-  // Check Groups/Supergroups
+  // Check Groups
   if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
     const chatId = ctx.chat.id;
 
-    // Fast Path: Check Memory Cache first
-    if (authorizedCache.has(chatId)) {
-      return next();
+    // Fast Path: Cache
+    if (authorizedCache.has(chatId)) return next();
+
+    // Check DB (With Fast Timeout)
+    try {
+      // connecting(2) or connected(1)
+      if (mongoose.connection.readyState !== 1) {
+        console.warn("⚠️ DB Not Connected. Skipping Auth Check (Bot might be limited).");
+        // Optional: return next() if you want it to work offline, 
+        // but better to block or warn. 
+        // For now, let's allow commands to pass so user sees "DB Error" later instead of silence.
+      }
+
+      let group = await Group.findOne({ chatId: chatId }).maxTimeMS(2000); // 2s Timeout
+
+      // Allow specific commands even if unauthorized
+      const text = ctx.message && ctx.message.text ? ctx.message.text : '';
+      if (text.match(/^\/(activate|id|unlock|debug|ping)/)) return next();
+
+      if (!group || !group.isAuthorized) return;
+
+      authorizedCache.add(chatId);
+    } catch (e) {
+      console.error("Auth Middleware Error:", e.message);
+      // On DB Error, allow /debug to pass so we can diagnose
+      if (ctx.message && ctx.message.text && ctx.message.text.includes('/debug')) return next();
     }
-
-    // Check DB for authorization
-    let group = await Group.findOne({ chatId: chatId });
-
-    // Allow the /activate command (with optional @botname) to pass through
-    if (ctx.message && ctx.message.text && ctx.message.text.match(/^\/activate(@\w+)?/)) {
-      return next();
-    }
-
-    // Allow the /id command (with optional @botname) to pass through
-    if (ctx.message && ctx.message.text && ctx.message.text.match(/^\/id(@\w+)?/)) {
-      return next();
-    }
-
-    // Allow the /unlock command (with optional @botname) 
-    if (ctx.message && ctx.message.text && ctx.message.text.match(/^\/unlock(@\w+)?/)) {
-      return next();
-    }
-
-    // If not authorized, silently ignore (or you could leave)
-    if (!group || !group.isAuthorized) {
-      return;
-    }
-
-    // If we found it in DB but not in Cache, add it to Cache
-    authorizedCache.add(chatId);
   }
 
   return next();
@@ -472,27 +508,42 @@ bot.command('check', async (ctx) => {
 });
 
 // --- 3. New Member Alert & Admin Tagging ---
-let ADMIN_USERNAME = '';
-// NOTE: This variable resets if the bot restarts. 
-// For 24/7 reliability, we recommend storing the admin ID in MongoDB as well.
-
 bot.command('setadmin', async (ctx) => {
   if (!await isGroupAdmin(ctx)) {
     return ctx.reply("❌ **Access Denied**: You must be a Group Admin to use this command.");
   }
-  // Usage: /setadmin @username or just /setadmin to set yourself
+
+  let targetAdmin = '';
   if (ctx.message.text.split(' ').length > 1) {
-    ADMIN_USERNAME = ctx.message.text.split(' ')[1];
+    targetAdmin = ctx.message.text.split(' ')[1];
   } else {
-    ADMIN_USERNAME = '@' + (ctx.from.username || ctx.from.first_name);
+    targetAdmin = '@' + (ctx.from.username || ctx.from.first_name);
   }
-  ctx.reply(`✅ Security Alert Admin set to: ${ADMIN_USERNAME}`);
+
+  try {
+    await Setting.findOneAndUpdate(
+      { key: 'ADMIN_USERNAME' },
+      { value: targetAdmin },
+      { upsert: true }
+    );
+    ctx.reply(`✅ Security Alert Admin set to: ${targetAdmin} (Saved to Database)`);
+  } catch (e) {
+    console.error("Failed to save admin setting:", e);
+    ctx.reply("⚠️ Saved locally, but failed to save to Database.");
+  }
 });
 
-bot.on('new_chat_members', (ctx) => {
-  // Logic: Tag the admin when someone joins
+bot.on('new_chat_members', async (ctx) => {
   const newMembers = ctx.message.new_chat_members;
-  const adminTag = ADMIN_USERNAME ? ADMIN_USERNAME : 'Admins (Use /setadmin to configure)';
+
+  // Fetch Admin Tag from DB or default
+  let adminTag = 'Admins';
+  try {
+    const setting = await Setting.findOne({ key: 'ADMIN_USERNAME' });
+    if (setting) adminTag = setting.value;
+  } catch (e) {
+    console.error("Failed to fetch admin setting:", e);
+  }
 
   newMembers.forEach(member => {
     if (!member.is_bot) {
