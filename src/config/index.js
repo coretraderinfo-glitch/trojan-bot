@@ -5,7 +5,6 @@ const config = {
     MONGO_URI: process.env.MONGO_URI,
     OWNER_ID: process.env.OWNER_ID ? parseInt(process.env.OWNER_ID) : null,
     PORT: process.env.PORT || 3000,
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY || null,
     BANNED_EXTENSIONS: [
         // Executables
         '.exe', '.msi', '.dll', '.scr', '.com', '.pif', '.cpl', '.wsf',

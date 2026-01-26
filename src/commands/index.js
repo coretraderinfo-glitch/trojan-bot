@@ -4,8 +4,6 @@ const Group = require('../database/models/Group');
 const License = require('../database/models/License');
 const User = require('../database/models/User');
 const Setting = require('../database/models/Setting');
-const Roster = require('../database/models/Roster');
-const Sale = require('../database/models/Sale');
 const helpers = require('../utils/helpers');
 const { authorizedCache } = require('../middleware/auth');
 const mongoose = require('mongoose');
@@ -117,53 +115,6 @@ module.exports = (bot) => {
         ctx.reply("🧹 **Ghost Sweeper Service**\n\nTelegram Bots cannot scan member lists directly. To remove 'Deleted Accounts', please run the local Ghost Sweeper script on your machine:\n\n`node scripts/ghost_sweeper.js`", { parse_mode: 'Markdown' });
     });
 
-    // --- Phase 3: Sales Commands ---
-    bot.command('import_roster', async (ctx) => {
-        if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
-        const args = ctx.message.text.split(' ').slice(1).join(' ').toUpperCase();
-        if (!args) return ctx.reply("❌ Usage: `/import_roster HENG1, S12, P4...` (Comma separated)");
-
-        const codes = args.split(',').map(c => c.trim()).filter(c => c.length > 0);
-
-        try {
-            await Roster.findOneAndUpdate({ chatId: ctx.chat.id }, { codes }, { upsert: true });
-            ctx.reply(`✅ Roster Updated: ${codes.length} staff codes registered.`);
-        } catch (e) {
-            ctx.reply("❌ Roster setup error.");
-        }
-    });
-
-    bot.command('report', async (ctx) => {
-        if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
-        const { generateScoreboard } = require('../utils/reports');
-        const out = await generateScoreboard(ctx.chat.id);
-        ctx.reply(out, { parse_mode: 'Markdown' });
-    });
-
-    bot.command('reset_sales', async (ctx) => {
-        if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
-        const start = new Date(); start.setHours(0, 0, 0, 0);
-        const end = new Date(); end.setHours(23, 59, 59, 999);
-        try {
-            await Sale.deleteMany({ chatId: ctx.chat.id, timestamp: { $gte: start, $lte: end } });
-            ctx.reply("🗑️ Today's sales have been reset.");
-        } catch (e) {
-            ctx.reply("❌ Reset error.");
-        }
-    });
-
-    // --- Phase 5: Maintenance ---
-    bot.command('prune_users', async (ctx) => {
-        if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
-        const cutoff = Date.now() - (180 * 24 * 60 * 60 * 1000);
-        try {
-            const result = await User.deleteMany({ last_seen: { $lt: cutoff } });
-            ctx.reply(`🧹 Maintenance: Removed ${result.deletedCount} inactive user records (>180 days).`);
-        } catch (e) {
-            ctx.reply("❌ Pruning error.");
-        }
-    });
-
     bot.command('help', async (ctx) => {
         let help = `🤖 **Aero Smart Help Menu**\n\n`;
         help += `**Public Commands:**\n`;
@@ -171,8 +122,7 @@ module.exports = (bot) => {
 
         if (await helpers.isGroupAdmin(ctx)) {
             help += `**Admin Commands:**\n`;
-            help += `/activate, /setadmin, /kick_inactive, /check\n`;
-            help += `/import_roster, /report, /reset_sales, /prune_users, /clean_ghosts, /debug\n\n`;
+            help += `/activate, /setadmin, /kick_inactive, /check, /clean_ghosts, /debug\n\n`;
         }
 
         if (String(ctx.from.id) === String(config.OWNER_ID)) {

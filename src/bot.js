@@ -33,9 +33,6 @@ bot.use(linkShield);
 registerCommands(bot);
 registerHandlers(bot);
 
-// 5.1 Automation (Phase 4: Motivation)
-require('./utils/motivation')(bot);
-
 // 6. Global Catch
 bot.catch((err, ctx) => {
     console.error(`❌ Global Registry Error (${ctx.updateType}):`, err.message);
