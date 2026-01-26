@@ -1,93 +1,362 @@
-# docs/API_SPEC.md
-
-## 1. System Architecture Overview
-Aero Smart is engineered as a **Modular Singleton Architecture**, ensuring that each security component (Link Shield, Malware Shield, Access Control) operates as a high-performance interceptor within the Telegraf middleware pipeline.
-
-### 1.1 Core Engine Architecture
-- **Environment Gateway**: Uses `dotenv` for zero-leak configuration.
-- **Service Layer**: 
-    - **Telegraf 4.16+**: Principal MTProto interface.
-    - **Express.js**: Lifecycle heartbeat and health-check responder.
-    - **Mongoose ODM**: Transactional integrity for MongoDB persistence.
-- **Middleware Chain**: `auth` -> `activity` -> `linkShield` -> `Handlers`.
+# API SPECIFICATION - Aero Smart Bot
+**Version:** 2.0 (Post-Revert)
+**Last Updated:** 2026-01-27T00:50:26+08:00
 
 ---
 
-## 2. Global Database Blueprint (MongoDB)
+## 1. SYSTEM ARCHITECTURE
 
-### 2.1 Schema: `User`
-*Tracks identity and activity telemetry for spam prevention and retention audit.*
-- `userId`: **Number (Unique)**. Primary Telegram identifier.
-- `username`: **String**. Captured @handle for mention-tagging.
-- `last_seen`: **Number**. Unix timestamp of the most recent message received.
+### 1.1 Technology Stack
+- **Runtime**: Node.js 20.x LTS
+- **Framework**: Telegraf 4.16.3 (Telegram Bot API)
+- **Database**: MongoDB (Mongoose ODM 9.1.5)
+- **Web Server**: Express 5.2.1 (Heartbeat/Health checks)
+- **Environment**: dotenv 17.2.3
 
-### 2.2 Schema: `Group`
-*Manages authorization states for the multi-tenant group environment.*
-- `chatId`: **Number (Unique)**. Target group identifier.
-- `name`: **String**. The display name of the group.
-- `isAuthorized`: **Boolean**. Master switch for bot functionality.
-- `authorizedAt`: **Date**. 
-- `authorizedBy`: **Number**.
-
-### 2.3 Schema: `License`
-*Secures the monetization and access control gate.*
-- `key`: **String (UUID)**. Unique activation token.
-- `isRedeemed`: **Boolean**.
-- `redeemedBy`: **Number**.
-- `redeemedInChat`: **Number**.
-
-### 2.4 Schema: `Setting`
-*Global KV store for dynamic configuration.*
-- `key`: **String**. e.g., `ADMIN_USERNAME`.
-- `value`: **String**. Current configuration value.
+### 1.2 Core Components
+1. **Bot Engine** (`src/bot.js`) - Main orchestrator
+2. **Middleware Pipeline** - auth → activity → linkShield
+3. **Command Registry** (`src/commands/index.js`) - 9 commands
+4. **Event Handlers** (`src/handlers/index.js`) - Security shields
+5. **Database Layer** - 5 MongoDB collections
 
 ---
 
-## 3. Security Middleware Specifications
+## 2. DATABASE SCHEMA
 
-### 3.1 `authMiddleware`
-- **Objective**: Zero-Trust access control.
-- **Workflow**: 
-    1. Check `ctx.chat.type`; if `private`, bypass authorization.
-    2. Interrogate `authorizedCache` (in-memory Set).
-    3. If cache miss, query `Group` collection.
-    4. If unauthorized and not a whitelist command (`/activate`, `/id`, `/unlock`), terminate request.
+### 2.1 Group Collection
+```javascript
+{
+  chatId: Number (unique),
+  name: String,
+  isAuthorized: Boolean,
+  authorizedAt: Date,
+  authorizedBy: Number
+}
+```
 
-### 3.2 `Link Shield` (Level 1: Nuclear)
-- **Objective**: Prevent 100% of malicious URL distribution.
-- **Regex Pattern**: `/(https?:\/\/[^\s]+)|(www\.[^\s]+)|(\b\w+\.(com|net|org|xyz|info|biz|io|me)\b)/gi`
-- **Exceptions**: `isGroupAdmin(ctx)` returns true.
+### 2.2 License Collection
+```javascript
+{
+  key: String (UUID),
+  createdBy: Number,
+  createdAt: Date,
+  isRedeemed: Boolean,
+  redeemedBy: Number,
+  redeemedAt: Date,
+  redeemedInChat: Number
+}
+```
 
-### 3.3 `Malware Shield` (Nuclear Roster)
-- **Objective**: Neutralize file-based attack vectors.
-- **Logic**: **Deep Extension Inspection (DEI)**. Splits filename by dots and checks every segment against the Banned List.
-- **Banned Extensions**: 
-    - `.exe, .msi, .dll, .pif, .scr, .com, .wsf, .cpl` (Executables)
-    - `.js, .vbs, .ps1, .sh, .bat, .jar` (Scripts)
-    - `.zip, .rar, .7z, .iso, .tar, .bin` (Archives)
-    - `.docm, .xlsm, .pptm` (Macros)
-- **MIME Masquerade Check**: Deletes `.jpg/.pdf` files that possess `application/x-msdownload` binary signatures.
+### 2.3 SecurityLog Collection
+```javascript
+{
+  timestamp: Date,
+  type: String (enum: ['MALWARE', 'LINK', 'UNAUTHORIZED']),
+  userId: Number,
+  username: String,
+  chatId: Number,
+  chatTitle: String,
+  details: {
+    fileName: String,
+    mimeType: String,
+    link: String,
+    command: String
+  }
+}
+```
+
+### 2.4 Setting Collection
+```javascript
+{
+  key: String,
+  value: String
+}
+```
+
+### 2.5 User Collection
+```javascript
+{
+  userId: Number (unique),
+  username: String,
+  last_seen: Number (timestamp)
+}
+```
 
 ---
 
-## 4. Full Command Matrix
+## 3. COMMAND REFERENCE
 
-| Command | Purpose | Access | Interaction Logic |
-| :--- | :--- | :--- | :--- |
-| `/ping` | Health Audit | Public | Checks Node.js uptime and Mongo connection state. |
-| `/id` | Debug Identity | Public | Returns Chat and User numeric IDs. |
-| `/activate` | Key Redemption | Admin | Moves Group from 'Locked' to 'Authorized' via License Key. |
-| `/setadmin` | Alert Routing | Admin | Updates persistent `ADMIN_USERNAME` for join alerts. |
-| `/kick_inactive` | Member Purge | Admin | Analyzes `User.last_seen` and bulk-removes inactive accounts. |
-| `/debug` | System Audit | Admin | Reports Auth state, Cache state, and Bot Admin rights. |
-| `/check` | User Verification | Admin | **(Restoring)** Inspects profile of the replied-to user. |
-| `/clean_ghosts` | Support Info | Admin | **(Restored)** Guidance on Userbot scrubbing for deleted accounts. |
-| `/generate_key` | Key Minting | Owner | Secure UUID generation via `License` model. |
-| `/unlock` | Master Override | Owner | Direct database authorization bypass. |
+### 3.1 Public Commands
+
+#### `/ping`
+- **Access**: Everyone
+- **Purpose**: Health check
+- **Response**: Bot status + DB connection state
+- **Example**: 
+  ```
+  🏓 Pong! Ironclad Foundation alive.
+  (DB Status: 1)
+  ```
+
+#### `/id`
+- **Access**: Everyone
+- **Purpose**: Get User ID and Chat ID
+- **Response**: Formatted IDs
+- **Example**:
+  ```
+  🆔 User: `123456789`
+  📍 Chat: `-1001234567890`
+  ```
+
+### 3.2 Admin Commands
+
+#### `/debug`
+- **Access**: Group Admins only
+- **Purpose**: System diagnostics
+- **Response**: Auth status, cache status, bot permissions, owner config
+- **Example**:
+  ```
+  🔍 Audit Report
+  
+  📂 DB Auth: ✅
+  🚀 Cache: ✅
+  🤖 Bot Admin: ✅
+  👑 Owner: ✅
+  ```
+
+#### `/activate <KEY>`
+- **Access**: Group Admins only
+- **Purpose**: Redeem license key to authorize group
+- **Parameters**: UUID license key
+- **Database Operations**:
+  1. Validates key in License collection
+  2. Marks key as redeemed
+  3. Creates/updates Group document
+  4. Adds to authorizedCache
+- **Example**: `/activate abc-123-def-456`
+
+#### `/setadmin <@user>`
+- **Access**: Group Admins only
+- **Purpose**: Configure who gets tagged for new member alerts
+- **Parameters**: @username (optional, defaults to command sender)
+- **Database**: Updates Setting collection (key: 'ADMIN_USERNAME')
+- **Example**: `/setadmin @Robin`
+
+#### `/kick_inactive <days>`
+- **Access**: Group Admins only
+- **Purpose**: Remove users inactive for X days
+- **Parameters**: Number of days
+- **Logic**:
+  1. Queries User collection for last_seen < cutoff
+  2. Executes banChatMember + unbanChatMember (Telegram kick pattern)
+- **Example**: `/kick_inactive 30`
+
+#### `/check`
+- **Access**: Group Admins only
+- **Purpose**: Audit a specific user
+- **Usage**: Reply to target message, then send `/check`
+- **API Call**: `ctx.telegram.getChatMember(chatId, userId)`
+- **Response**: User ID, status, bot flag
+
+#### `/clean_ghosts`
+- **Access**: Group Admins only
+- **Purpose**: Provide guidance on removing deleted accounts
+- **Response**: Instructions to run `scripts/ghost_sweeper.js`
+
+#### `/help`
+- **Access**: Everyone (dynamic based on privilege)
+- **Purpose**: Show available commands
+- **Logic**: Displays different menus for public/admin/owner
+
+### 3.3 Owner Commands
+
+#### `/generate_key`
+- **Access**: Bot Owner only (OWNER_ID check)
+- **Purpose**: Create new license key
+- **Logic**: Generates UUID, creates License document
+- **Response**: New key in code block
+
+#### `/unlock`
+- **Access**: Bot Owner only
+- **Purpose**: Bypass license requirement
+- **Logic**: Directly authorizes current group
+- **Database**: Creates Group document with isAuthorized: true
 
 ---
 
-## 5. [Phase 9] Sales Tracking Projection
-- **Input Pattern**: `Code+Amount` (e.g., `S12+1000`).
-- **Engine**: Additive transaction logic with daily persistence.
-- **Reporting**: Full roster broadcast on every successful entry.
+## 4. SECURITY FEATURES
+
+### 4.1 Malware Shield
+**Location**: `src/handlers/index.js`
+**Trigger**: `bot.on('document')`
+
+**Detection Logic**:
+1. **Deep Extension Inspection (DEI)**:
+   - Splits filename by `.`
+   - Checks each segment against BANNED_EXTENSIONS
+   - Catches: `virus.exe.zip`, `malware.pdf.exe`
+
+2. **MIME Masquerade Detection**:
+   - Cross-verifies extension with MIME type
+   - Blocks: `.jpg` files with executable signatures
+
+**Banned Extensions** (30 total):
+```javascript
+['.exe', '.msi', '.dll', '.scr', '.com', '.pif', '.cpl', '.wsf',
+ '.js', '.jse', '.vbs', '.vbe', '.ps1', '.hta', '.sh', '.bat', '.cmd', '.jar',
+ '.zip', '.rar', '.7z', '.tar', '.gz', '.iso', '.img', '.bin',
+ '.docm', '.xlsm', '.pptm',
+ '.lnk', '.reg', '.inf', '.sct']
+```
+
+**Actions**:
+1. Creates SecurityLog entry (type: 'MALWARE')
+2. Deletes message
+3. Posts public alert with filename
+
+**Admin Exception**: Admins can upload any file type
+
+### 4.2 Link Shield
+**Location**: `src/middleware/shield.js`
+**Trigger**: Every text message
+
+**Detection Pattern**:
+```javascript
+/(https?:\/\/[^\s]+)|(www\.[^\s]+)|(\b\w+\.(com|net|org|xyz|info|biz|io|me)\b)/gi
+```
+
+**Actions**:
+1. Creates SecurityLog entry (type: 'LINK')
+2. Deletes message
+
+**Admin Exception**: Admins can post links
+
+### 4.3 Access Control
+**Location**: `src/middleware/auth.js`
+
+**Logic**:
+1. Private chats: Always allowed
+2. Groups: Check authorizedCache (in-memory Set)
+3. Cache miss: Query Group collection (2-second timeout)
+4. Whitelist commands: `/activate`, `/id`, `/unlock`, `/debug`, `/ping`
+
+**Cache Refresh**: Every 5 minutes via `setInterval`
+
+---
+
+## 5. EVENT HANDLERS
+
+### 5.1 New Member Alert
+**Trigger**: `bot.on('new_chat_members')`
+**Logic**:
+1. Queries Setting collection for 'ADMIN_USERNAME'
+2. Posts alert tagging configured admin
+3. Skips bots
+
+**Example**:
+```
+🚨 Alert: John Doe joined. @Robin, please verify.
+```
+
+### 5.2 Bot Promotion Handler
+**Trigger**: `bot.on('my_chat_member')`
+**Condition**: Bot promoted to administrator
+**Response**:
+```
+🤖 Ironclad Foundation Online
+I am now an Admin. Use /activate to start.
+```
+
+---
+
+## 6. MIDDLEWARE PIPELINE
+
+### 6.1 Execution Order
+```
+Incoming Message
+    ↓
+authMiddleware (access control)
+    ↓
+activityTracker (telemetry)
+    ↓
+linkShield (anti-phishing)
+    ↓
+Command/Handler
+```
+
+### 6.2 Activity Tracker
+**Location**: `src/middleware/activity.js`
+**Purpose**: Record user activity for `/kick_inactive`
+**Database**: Upserts User collection with userId, username, last_seen
+
+---
+
+## 7. CONFIGURATION
+
+### 7.1 Environment Variables
+```
+BOT_TOKEN=<Telegram Bot Token>
+MONGO_URI=<MongoDB Connection String>
+OWNER_ID=<Your Telegram User ID>
+PORT=3000 (optional)
+```
+
+### 7.2 Banned Extensions
+**Location**: `src/config/index.js`
+**Total**: 30 extensions
+**Categories**: Executables, Scripts, Archives, Macros, System files
+
+---
+
+## 8. HEALTH & MONITORING
+
+### 8.1 Express Endpoints
+- `GET /` - Returns "Ironclad Bot Alive 🤖"
+- `GET /health` - Returns "OK" (200 status)
+
+### 8.2 Port
+- Default: 3000
+- Configurable via PORT environment variable
+
+---
+
+## 9. ERROR HANDLING
+
+### 9.1 Global Catch
+```javascript
+bot.catch((err, ctx) => {
+  console.error(`❌ Global Registry Error (${ctx.updateType}):`, err.message);
+});
+```
+
+### 9.2 Database Connection
+- Retry logic: 10 attempts, 5-second delay
+- Fail-fast: `bufferCommands: false`
+- Timeout: 10 seconds
+
+---
+
+## 10. DEPLOYMENT
+
+### 10.1 Production Checklist
+- ✅ Environment variables configured
+- ✅ MongoDB Atlas IP whitelist updated
+- ✅ Railway/Heroku deployment
+- ✅ Health endpoint accessible
+- ✅ Bot set as group administrator
+
+### 10.2 Dependencies
+```json
+{
+  "dotenv": "^17.2.3",
+  "express": "^5.2.1",
+  "input": "^1.0.1",
+  "mongoose": "^9.1.5",
+  "telegraf": "^4.16.3",
+  "telegram": "^2.26.22",
+  "uuid": "^13.0.0"
+}
+```
+
+**Security**: 0 vulnerabilities (verified via `npm audit`)
