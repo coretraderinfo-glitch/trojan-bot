@@ -1,76 +1,79 @@
 # docs/ARCHITECTURE.md
-**Version:** 1.0
-**Project:** Trojan AI (Aero Smart)
+**Version:** 1.1
+**Project Code:** Aero Smart (Enterprise-Grade Modular Resilience)
 
-## 1. System Overview
-Trojan AI is a Node.js-based Telegram moderation bot designed for enterprise-grade group security. It operates as a stateless event-driven service that interacts with the Telegram Bot API and a MongoDB database for persistence.
+## 1. System Philosophy (The "Ironclad" Rule)
+Aero Smart is architected on the principle of **Modular Isolation**. Every feature (Command, Event, Logic) is decoupled from the main process thread. This ensures that a failure in one module (e.g., AI Greeting) cannot compromise the core mission (Security & Moderation).
 
-## 2. Core Components
+---
 
-### 2.1 Telegraf Framework
-The application uses the `Telegraf` library as a high-level wrapper around the Telegram Bot API. It handles long-polling (or webhooks potentially) and routes incoming Telegram updates to specific middleware or command handlers.
+## 2. Directory Structure Blueprint (Additive Hierarchy)
 
-### 2.2 Express Heartbeat Server
-To ensure 24/7 uptime monitoring (e.g., via Railway or Uptime Robot), a minimal `Express` server is initialized.
-- **Port**: Configurable via `PORT` environment variable (defaults to 3000).
-- **Endpoints**:
-    - `/`: Returns "Bot is alive! 🤖".
-    - `/health`: Returns "OK" (200 status code).
+```text
+/
+├── bot.js                  # Operational Proxy (Bootloader)
+├── package.json            # Manifest & Dependency Engine
+├── Procfile                # Cloud Deployment instruction (Railway/Heroku)
+├── .env                    # Secure Environment Vault (Non-committed)
+├── scripts/                # Local Utility Scripts
+│   └── ghost_sweeper.js    # MTProto Userbot for member-list scrubbing
+├── src/                    # The Modular Core
+│   ├── bot.js              # Instance Controller & Pipeline Assembly
+│   ├── config/             # System Configuration Baseline
+│   │   └── index.js        # Environment mapping & "Risk 0" Extension Roster
+│   ├── commands/           # Interactive Command Definitions
+│   │   └── index.js        # Registry for Ping, ID, Help, Admin & Owner tools
+│   ├── database/           # Persistence Lifecycle
+│   │   ├── connection.js   # Robust MongoDB Retry & Reconnect logic
+│   │   └── models/         # Mongoose Schema Definitions
+│   │       ├── Group.js    # Tenant Authorization states
+│   │       ├── License.js  # Access Token management
+│   │       ├── Roster.js   # Phase 3: Staff code management
+│   │       ├── Sale.js     # Phase 3: Transaction telemetry
+│   │       ├── SecurityLog.js # Phase 2.2: Defensive audit trail
+│   │       ├── Setting.js  # Dynamic Global KV Store
+│   │       └── User.js     # Activity Telemetry
+│   ├── middleware/         # The Security Firewall (Interceptor Pipeline)
+│   │   ├── activity.js     # User Telemetry capturing
+│   │   ├── auth.js         # Zero-Trust Access Control (Cache-First)
+│   │   └── shield.js       # The "Link Shield" (Anti-Phishing Layer)
+│   ├── handlers/           # Event-Driven Logic
+│   │   └── index.js        # The "Malware Shield" (DEI Engine) & Roster logic
+│   └── utils/              # Utility Helpers
+│       └── helpers.js      # Admin verification & ID masking logic
+└── docs/                   # Engineering Knowledge Base
+    ├── API_SPEC.md         # 100% Granular Feature Blueprint
+    ├── ARCHITECTURE.md    # System Design & Structural Rationale
+    ├── EXECUTION_PLAN.md  # Active Phase Roadmap
+    └── SECURITY_BASELINE.md # Threat Modeling & Zero-Trust specs
+```
 
-### 2.3 MongoDB Persistence (Mongoose)
-Persistence is managed via MongoDB using the `Mongoose` ODM.
-- **Connection Logic**: Implements a "Root Cause Engineered" connection strategy.
-    - `bufferCommands: false`: Prevents application hanging if DB is unreachable.
-    - `serverSelectionTimeoutMS: 10000`: Fast failure detection.
-    - `retryCount`: 10 attempts with a 5-second delay.
-- **Models**:
-    - `User`: Tracks individual user activity (`userId`, `username`, `last_seen`).
-    - `Group`: Stores authorized Telegram group metadata and authorization status.
-    - `License`: Handles the unique key system for unlocking group features.
-    - `Setting`: Stores system-wide persistent configurations (e.g., `ADMIN_USERNAME`).
+---
 
-## 3. Request Pipeline (Middleware Flow)
+## 3. Engineering Root Cause Principles
 
-Every message sent to the bot passes through a sequence of middlewares:
+### 3.1 Security-First Interception
+- **Problem**: Bots often rely on simple search patterns.
+- **Root Cause Engineered Solution**: The **Deep Extension Inspection (DEI)** engine in `handlers/index.js`. It performs recursive segment analysis on every file dot-separator to find hidden `.exe` or `.zip` payloads, regardless of where they are in the filename.
 
-1.  **Emergency Ping**: Intercepts `/ping` commands immediately to verify process health without requiring a DB connection.
-2.  **Access Control**: 
-    - Checks if the chat is private (always allowed).
-    - If a group, checks the `authorizedCache` (in-memory `Set`).
-    - If cache miss, queries MongoDB `Group` model with a 2-second timeout (`maxTimeMS`).
-    - Commands like `/activate`, `/id`, `/unlock`, `/debug`, and `/ping` are allowed through even if the group is not yet authorized.
-3.  **Activity Tracker**: Upserts user data (`userId`, `last_seen`) into the `User` collection.
-4.  **Link Shield**: 
-    - Scans text for patterns matching `http`, `www`, or common TLDs (`.com`, `.net`, etc.).
-    - Verified against `isGroupAdmin`.
-    - Automatically deletes unauthorized links.
-5.  **File Moderation**: 
-    - Monitors `document` events.
-    - Blocks banned extensions: `.exe`, `.apk`, `.scr`, `.bat`, `.cmd`, `.sh`, `.com`, `.msi`, `.jar`.
-    - Deletes malicious uploads and notifies the group.
+### 3.2 Resilience & Synchronization
+- **Problem**: In-memory caches drift during cloud-auto-restarts.
+- **Root Cause Engineered Solution**: A 5-minute **Cache TTL Heartbeat** in `src/bot.js` calls `preloadCache()` periodically, ensuring that license activations on any instance are synchronized across the cluster in <300 seconds.
 
-## 4. Logical Workflows
+### 3.3 Database Stability
+- **Problem**: Connection drops can "hang" the entire bot.
+- **Root Cause Engineered Solution**: `connection.js` uses strict `bufferCommands: false`. If MongoDB is down, the bot will fail gracefully for DB commands while keeping diagnostic paths (like `/ping`) open, preventing a complete system lockup.
 
-### 4.1 Group Activation
-1. User runs `/generate_key` (Owner only).
-2. Owner gives key to a Group Admin.
-3. Admin runs `/activate <KEY>` in the target group.
-4. Bot verifies key exists and is not redeemed.
-5. Bot updates `License` (redeemed status) and `Group` (isAuthorized status).
-6. Bot updates `authorizedCache` to allow subsequent messages.
+---
 
-### 4.2 Inactive User Management (`/kick_inactive`)
-1. Admin runs `/kick_inactive <days>`.
-2. Bot calculates cutoff timestamp (`Date.now() - days`).
-3. Bot queries `User` collection for matching IDs.
-4. Bot executes `banChatMember` followed by `unbanChatMember` (the standard "Kick" maneuver in Telegram).
+## 4. Operational Readiness Baseline (Level 0)
+1. **Malware Shield**: Active. 30+ extensions blocked via DEI logic.
+2. **Link Shield**: Active. Level 1 strict blocking for non-admin URLs.
+3. **Uptime Heartbeat**: Active. Express.js `/health` endpoint live on Port 3000.
+4. **License Engine**: Active. Group authorization required prior to bot interaction.
 
-### 4.3 New Member Verification
-1. `new_chat_members` event triggers.
-2. Bot fetches `ADMIN_USERNAME` from the `Setting` collection.
-3. Bot tags the admin in the group for manual verification.
-
-## 5. Deployment Architecture
-- **Environment Management**: `.env` file for local development; Platform Variables for Railway/Production.
-- **Process Management**: `Procfile` specifies `worker: npm start`.
-- **Portability**: Codebase is fully portable to any Node.js environment with outbound port 27017 (for DB) and 443 (for Telegram API) open.
+## 5. Software & Hardware Recommendations
+- **Platform**: Best-in-class running on **Railway (Pro Plan)** for persistent CPU allocation.
+- **Database**: **MongoDB Atlas (M10+)** for consistent latency below 50ms.
+- **Runtime**: Node.js **20.x LTS or higher** (The system is verified on Node 22+).
+- **Hardening**: Periodically execute `npm audit` to verify the 0V (Zero Vulnerability) state.

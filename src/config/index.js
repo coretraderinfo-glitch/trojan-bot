@@ -5,8 +5,18 @@ const config = {
     MONGO_URI: process.env.MONGO_URI,
     OWNER_ID: process.env.OWNER_ID ? parseInt(process.env.OWNER_ID) : null,
     PORT: process.env.PORT || 3000,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || null,
     BANNED_EXTENSIONS: [
-        '.exe', '.apk', '.scr', '.bat', '.cmd', '.sh', '.com', '.msi', '.jar'
+        // Executables
+        '.exe', '.msi', '.dll', '.scr', '.com', '.pif', '.cpl', '.wsf',
+        // Scripts
+        '.js', '.jse', '.vbs', '.vbe', '.ps1', '.hta', '.sh', '.bat', '.cmd', '.jar',
+        // Archives (Paylod smuggling)
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.iso', '.img', '.bin',
+        // Macro Documents
+        '.docm', '.xlsm', '.pptm',
+        // System / Other
+        '.lnk', '.reg', '.inf', '.sct'
     ]
 };
 

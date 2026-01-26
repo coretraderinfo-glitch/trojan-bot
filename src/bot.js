@@ -14,6 +14,10 @@ const bot = new Telegraf(config.BOT_TOKEN);
 // 2. Foundation: Database
 connectDB(0, preloadCache);
 
+// 2.1 Cache Reliability: Refresh the authorized groups cache every 5 minutes
+// This ensures that activations on other instances are synchronized.
+setInterval(() => preloadCache(), 300000);
+
 // 3. Foundation: Heartbeat (Uptime)
 const app = express();
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -28,6 +32,9 @@ bot.use(linkShield);
 // 5. Features (Commands & Events)
 registerCommands(bot);
 registerHandlers(bot);
+
+// 5.1 Automation (Phase 4: Motivation)
+require('./utils/motivation')(bot);
 
 // 6. Global Catch
 bot.catch((err, ctx) => {
