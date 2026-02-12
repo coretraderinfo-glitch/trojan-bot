@@ -20,6 +20,7 @@ module.exports = (bot) => {
 
     // --- Admin ---
     bot.command('debug', async (ctx) => {
+        if (mongoose.connection.readyState !== 1) return ctx.reply("❌ Database is currently offline. System in limited mode.");
         if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
 
         const group = await Group.findOne({ chatId: ctx.chat.id });
@@ -35,6 +36,7 @@ module.exports = (bot) => {
     });
 
     bot.command('activate', async (ctx) => {
+        if (mongoose.connection.readyState !== 1) return ctx.reply("❌ Database is currently offline. Cannot activate.");
         if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
         const key = ctx.message.text.split(' ')[1];
         if (!key) return ctx.reply("❌ Usage: `/activate <KEY>`");
@@ -59,6 +61,7 @@ module.exports = (bot) => {
     });
 
     bot.command('setadmin', async (ctx) => {
+        if (mongoose.connection.readyState !== 1) return ctx.reply("❌ Database offline.");
         if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
         const target = ctx.message.text.split(' ')[1] || ('@' + (ctx.from.username || ctx.from.first_name));
 
@@ -71,6 +74,7 @@ module.exports = (bot) => {
     });
 
     bot.command('kick_inactive', async (ctx) => {
+        if (mongoose.connection.readyState !== 1) return ctx.reply("❌ Database offline.");
         if (!await helpers.isGroupAdmin(ctx)) return ctx.reply("❌ Admins only.");
         const days = parseInt(ctx.message.text.split(' ')[1]);
         if (!days) return ctx.reply("❌ Usage: `/kick_inactive <days>`");
@@ -125,7 +129,7 @@ module.exports = (bot) => {
             help += `/activate, /setadmin, /kick_inactive, /check, /clean_ghosts, /debug\n\n`;
         }
 
-        if (String(ctx.from.id) === String(config.OWNER_ID)) {
+        if (String(ctx.from?.id) === String(config.OWNER_ID)) {
             help += `**Owner Commands:**\n`;
             help += `/generate_key, /unlock\n`;
         }
@@ -135,14 +139,16 @@ module.exports = (bot) => {
 
     // --- Owner ---
     bot.command('generate_key', async (ctx) => {
-        if (String(ctx.from.id) !== String(config.OWNER_ID)) return ctx.reply("⛔ Owner only.");
+        if (mongoose.connection.readyState !== 1) return ctx.reply("❌ Database offline.");
+        if (String(ctx.from?.id) !== String(config.OWNER_ID)) return ctx.reply("⛔ Owner only.");
         const key = uuidv4();
         await License.create({ key, createdBy: ctx.from.id });
         ctx.reply(`🔑 New Key: \`${key}\``, { parse_mode: 'Markdown' });
     });
 
     bot.command('unlock', async (ctx) => {
-        if (String(ctx.from.id) !== String(config.OWNER_ID)) return ctx.reply("⛔ Owner only.");
+        if (mongoose.connection.readyState !== 1) return ctx.reply("❌ Database offline.");
+        if (String(ctx.from?.id) !== String(config.OWNER_ID)) return ctx.reply("⛔ Owner only.");
         await Group.findOneAndUpdate({ chatId: ctx.chat.id }, {
             isAuthorized: true, authorizedAt: Date.now()
         }, { upsert: true });

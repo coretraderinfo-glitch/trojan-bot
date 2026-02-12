@@ -1,4 +1,5 @@
 const User = require('../database/models/User');
+const mongoose = require('mongoose');
 
 // Default: Prune users inactive for 90 days
 const INACTIVE_THRESHOLD = 90 * 24 * 60 * 60 * 1000;
@@ -6,6 +7,9 @@ const INACTIVE_THRESHOLD = 90 * 24 * 60 * 60 * 1000;
 const PRUNE_INTERVAL = 24 * 60 * 60 * 1000;
 
 const pruneInactiveUsers = async () => {
+    // Prevent crash if DB is not ready
+    if (mongoose.connection.readyState !== 1) return;
+
     const cutoff = Date.now() - INACTIVE_THRESHOLD;
     try {
         const result = await User.deleteMany({ last_seen: { $lt: cutoff } });

@@ -1,4 +1,5 @@
 const { Telegraf } = require('telegraf');
+const mongoose = require('mongoose');
 const express = require('express');
 const config = require('./config');
 const connectDB = require('./database/connection');
