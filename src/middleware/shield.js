@@ -1,7 +1,11 @@
 const helpers = require('../utils/helpers');
+const mongoose = require('mongoose');
 const SecurityLog = require('../database/models/SecurityLog');
 
 const linkShield = async (ctx, next) => {
+    // Prevent blocking or logging if DB is not ready (Race Condition Fix)
+    if (mongoose.connection.readyState !== 1) return next();
+
     if (ctx.message && ctx.message.text) {
         const text = ctx.message.text.toLowerCase();
         const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(\b\w+\.(com|net|org|xyz|info|biz|io|me)\b)/gi;
