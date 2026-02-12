@@ -34,28 +34,48 @@ bot.catch((err, ctx) => {
 
 // 6. Launch Sequence (Async)
 const launch = async () => {
-    // 6.1 Connect to DB first (Race Condition Fix)
-    await connectDB(0, preloadCache);
+    try {
+        console.log("🚀 Startup: Initiating sequence...");
 
-    // 6.2 Preload Cache (Also in connectDB callback, but good to be explicit/redundant)
-    await preloadCache();
+        // 6.1 Connect to DB first (Race Condition Fix)
+        // Note: connectDB handles its own retries, but we await the first attempt.
+        await connectDB(0, preloadCache);
 
-    // 6.3 Internal Scheduler
-    initScheduler();
+        // 6.2 Preload Cache
+        if (mongoose.connection.readyState === 1) {
+            await preloadCache();
+        }
 
-    // 2.1 Cache Reliability: Refresh the authorized groups cache every 5 minutes
-    setInterval(() => preloadCache(), 300000);
+        // 6.3 Internal Scheduler
+        initScheduler();
 
-    // 6.4 Launch Bot
-    bot.launch().then(() => {
-        console.log(`🚀 Trojan AI: Deployment Successful.`);
+        // 2.1 Cache Reliability: Refresh the authorized groups cache every 5 minutes
+        setInterval(() => preloadCache(), 300000);
+
+        // 6.4 Launch Bot
+        console.log("🚀 Startup: Launching Telegram Bot...");
+        await bot.launch();
+        console.log(`✅ Trojan AI: Deployment Successful.`);
         console.log(`👑 Owner ID: ${config.OWNER_ID || 'Not Configured'}`);
-    });
+    } catch (err) {
+        console.error("❌ CRITICAL STARTUP ERROR:", err);
+        // Do not exit, to allow Health Check to keep container alive for debugging
+        // process.exit(1); 
+    }
 };
 
 launch();
 
+// 7. Process Safety Protocols
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+process.on('uncaughtException', (err) => {
+    console.error('🔥 UNCAUGHT EXCEPTION:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 UNHANDLED REJECTION:', reason);
+});
 
 module.exports = bot;
